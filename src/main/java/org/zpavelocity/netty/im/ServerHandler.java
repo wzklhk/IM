@@ -1,4 +1,4 @@
-package org.example.netty.im;
+package org.zpavelocity.netty.im;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler;

@@ -1,4 +1,4 @@
-package org.example.netty.inaction;
+package org.zpavelocity.netty.inaction;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
