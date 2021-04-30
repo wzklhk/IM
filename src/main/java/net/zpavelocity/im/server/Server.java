@@ -1,4 +1,4 @@
-package org.zpavelocity.netty.im;
+package net.zpavelocity.im.server;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
@@ -7,6 +7,10 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
+import net.zpavelocity.im.server.handler.BroadcastHandler;
+import net.zpavelocity.im.server.handler.ConnectHandler;
 
 import java.net.InetSocketAddress;
 
@@ -18,9 +22,12 @@ public class Server {
     }
 
     public void start() throws Exception {
-        final ServerHandler ServerHandler = new ServerHandler();
+        ConnectHandler connectHandler = new ConnectHandler();
+        BroadcastHandler broadcastHandler = new BroadcastHandler();
+
         EventLoopGroup bossGroup = new NioEventLoopGroup();
         EventLoopGroup workerGroup = new NioEventLoopGroup();
+
         try {
             ServerBootstrap b = new ServerBootstrap();
             b.group(bossGroup, workerGroup)
@@ -29,7 +36,10 @@ public class Server {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
-                            ch.pipeline().addLast(ServerHandler);
+                            ch.pipeline().addLast("decoder", new StringDecoder());
+                            ch.pipeline().addLast("encoder", new StringEncoder());
+                            ch.pipeline().addLast(connectHandler);
+                            ch.pipeline().addLast(broadcastHandler);
                         }
                     });
             ChannelFuture f = b.bind().sync();

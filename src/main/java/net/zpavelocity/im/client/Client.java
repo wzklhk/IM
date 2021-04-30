@@ -1,4 +1,4 @@
-package org.zpavelocity.netty.im;
+package net.zpavelocity.im.client;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelFuture;
@@ -7,6 +7,7 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import net.zpavelocity.im.client.handler.ClientHandler;
 
 import java.net.InetSocketAddress;
 
@@ -20,6 +21,7 @@ public class Client {
     }
 
     public void start() throws Exception {
+        final ClientHandler clientHandler = new ClientHandler();
         EventLoopGroup group = new NioEventLoopGroup();
         try {
             Bootstrap b = new Bootstrap();
@@ -29,7 +31,7 @@ public class Client {
                     .handler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
-                            ch.pipeline().addLast(new ClientHandler());
+                            ch.pipeline().addLast(clientHandler);
                         }
                     });
             ChannelFuture f = b.connect().sync();

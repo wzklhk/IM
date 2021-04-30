@@ -1,4 +1,4 @@
-package org.zpavelocity.netty.inaction;
+package net.zpavelocity.netty.inaction;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
