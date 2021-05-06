@@ -10,9 +10,9 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 @ChannelHandler.Sharable
-public class EchoServerHandler extends ChannelInboundHandlerAdapter {
+public class EchoHandler extends ChannelInboundHandlerAdapter {
 
-    public EchoServerHandler() {
+    public EchoHandler() {
         super();
     }
 

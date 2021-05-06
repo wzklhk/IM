@@ -7,7 +7,7 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import net.zpavelocity.im.server.handler.EchoServerHandler;
+import net.zpavelocity.im.server.handler.EchoHandler;
 
 import java.net.InetSocketAddress;
 
@@ -19,7 +19,7 @@ public class EchoServerTest {
     }
 
     public void start() throws Exception {
-        EchoServerHandler echoServerHandler = new EchoServerHandler();
+        EchoHandler echoServerHandler = new EchoHandler();
 
         EventLoopGroup bossGroup = new NioEventLoopGroup();
         EventLoopGroup workerGroup = new NioEventLoopGroup();
