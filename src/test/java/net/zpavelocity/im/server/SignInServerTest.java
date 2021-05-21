@@ -7,15 +7,17 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import net.zpavelocity.im.server.handler.ServerHandler;
+import net.zpavelocity.im.codec.MessageCodec;
+import net.zpavelocity.im.server.handler.SimpleBroadcastServerHandler;
+import net.zpavelocity.im.server.handler.SimpleSignInServerHandler;
 
 import java.net.InetSocketAddress;
 
-public class Server {
+public class SignInServerTest {
     private final int PORT;
 
-    public Server(int port) {
-        this.PORT = port;
+    public SignInServerTest(int PORT) {
+        this.PORT = PORT;
     }
 
     public void start() throws Exception {
@@ -30,7 +32,9 @@ public class Server {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
-                            ch.pipeline().addLast(new ServerHandler());
+                            ch.pipeline().addLast(new MessageCodec());
+                            ch.pipeline().addLast(new SimpleSignInServerHandler());
+                            ch.pipeline().addLast(new SimpleBroadcastServerHandler());
                         }
                     });
             ChannelFuture f = b.bind().sync();
@@ -44,9 +48,8 @@ public class Server {
 
     public static void main(String[] args) throws Exception {
         int port = 21010;
-        Server server = new Server(port);
+        SignInServerTest server = new SignInServerTest(port);
 
         server.start();
-
     }
 }
