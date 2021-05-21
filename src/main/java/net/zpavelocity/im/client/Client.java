@@ -21,8 +21,8 @@ public class Client {
     }
 
     public void start() throws Exception {
-        final ClientHandler clientHandler = new ClientHandler();
         EventLoopGroup group = new NioEventLoopGroup();
+
         try {
             Bootstrap b = new Bootstrap();
             b.group(group)
@@ -31,7 +31,7 @@ public class Client {
                     .handler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
-                            ch.pipeline().addLast(clientHandler);
+                            ch.pipeline().addLast(new ClientHandler());
                         }
                     });
             ChannelFuture f = b.connect().sync();

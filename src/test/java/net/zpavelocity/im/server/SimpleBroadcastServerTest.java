@@ -9,8 +9,9 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
+import net.zpavelocity.im.server.handler.CommandHandler;
 import net.zpavelocity.im.server.handler.ConnectHandler;
-import net.zpavelocity.im.server.handler.SimpleBroadcastHandler;
+import net.zpavelocity.im.server.handler.SimpleBroadcastServerHandler;
 
 import java.net.InetSocketAddress;
 
@@ -23,7 +24,7 @@ public class SimpleBroadcastServerTest {
 
     public void start() throws Exception {
         ConnectHandler connectHandler = new ConnectHandler();
-        SimpleBroadcastHandler simpleBroadcastHandler = new SimpleBroadcastHandler();
+        SimpleBroadcastServerHandler simpleBroadcastHandler = new SimpleBroadcastServerHandler();
 
         EventLoopGroup bossGroup = new NioEventLoopGroup();
         EventLoopGroup workerGroup = new NioEventLoopGroup();
@@ -36,6 +37,7 @@ public class SimpleBroadcastServerTest {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
+                            ch.pipeline().addLast(new CommandHandler());
                             ch.pipeline().addLast("decoder", new StringDecoder());
                             ch.pipeline().addLast("encoder", new StringEncoder());
                             ch.pipeline().addLast(connectHandler);
@@ -43,7 +45,7 @@ public class SimpleBroadcastServerTest {
                         }
                     });
             ChannelFuture f = b.bind().sync();
-            System.out.println(Server.class.getName() + " started with " + f.channel().localAddress());
+            System.out.println("Server started with " + f.channel().localAddress());
             f.channel().closeFuture().sync();
         } finally {
             bossGroup.shutdownGracefully().sync();

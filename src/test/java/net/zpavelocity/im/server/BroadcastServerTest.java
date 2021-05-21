@@ -43,7 +43,7 @@ public class BroadcastServerTest {
                         }
                     });
             ChannelFuture f = b.bind().sync();
-            System.out.println(Server.class.getName() + " started with " + f.channel().localAddress());
+            System.out.println("Server started with " + f.channel().localAddress());
             f.channel().closeFuture().sync();
         } finally {
             bossGroup.shutdownGracefully().sync();
