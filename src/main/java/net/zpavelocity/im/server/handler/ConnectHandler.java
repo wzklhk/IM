@@ -1,6 +1,5 @@
 package net.zpavelocity.im.server.handler;
 
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -21,12 +20,6 @@ public class ConnectHandler extends ChannelInboundHandlerAdapter {
                         + " Client " + ctx.channel().remoteAddress()
                         + " channelActive. ");
         System.out.println(str);
-
-        for (Channel channel : Channels.getChannelArrayList()) {
-            if (channel != ctx.channel()) {
-                channel.writeAndFlush(str);
-            }
-        }
     }
 
     @Override
@@ -38,12 +31,6 @@ public class ConnectHandler extends ChannelInboundHandlerAdapter {
                         + " Client " + ctx.channel().remoteAddress()
                         + " channelInactive. ");
         System.out.println(str);
-
-        for (Channel channel : Channels.getChannelArrayList()) {
-            if (channel != ctx.channel()) {
-                channel.writeAndFlush(str);
-            }
-        }
     }
 
     @Override

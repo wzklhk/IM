@@ -5,6 +5,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import net.zpavelocity.im.message.BroadcastMessage;
 import net.zpavelocity.im.message.SignInRequestMessage;
 import net.zpavelocity.im.message.SignInResponseMessage;
+import net.zpavelocity.im.message.UnicastMessage;
 
 import java.util.Scanner;
 
@@ -44,6 +45,16 @@ public class SimpleSignInClientHandler extends SimpleChannelInboundHandler<SignI
                 if (in.equals("exit")) {
                     ctx.channel().close();
                     return;
+                } else if (in.equals("send")) {
+                    System.out.println("user: ");
+                    String toUsername = scanner.nextLine();
+                    System.out.println("user: " + toUsername);
+
+                    System.out.println("message: ");
+                    String message = scanner.nextLine();
+                    System.out.println("message: " + message);
+
+                    ctx.writeAndFlush(new UnicastMessage(message, username, toUsername));
                 } else {
                     ctx.writeAndFlush(new BroadcastMessage(in, username));
                 }

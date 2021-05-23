@@ -7,11 +7,9 @@ import lombok.Data;
 public class User {
     private String username;
     private Channel userChannel;
-    private boolean isOnline;
 
-    public User(String username, Channel userChannel, boolean isOnline) {
+    public User(String username, Channel userChannel) {
         this.username = username;
         this.userChannel = userChannel;
-        this.isOnline = isOnline;
     }
 }

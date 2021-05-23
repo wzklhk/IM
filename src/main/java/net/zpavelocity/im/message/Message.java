@@ -15,6 +15,8 @@ public abstract class Message implements Serializable {
             return SignInRequestMessage.class;
         else if (messageTypeEnum == MessageTypeEnum.SIGN_IN_RESPONSE)
             return SignInResponseMessage.class;
+        else if (messageTypeEnum == MessageTypeEnum.UNICAST)
+            return UnicastMessage.class;
         else if (messageTypeEnum == MessageTypeEnum.BROADCAST)
             return BroadcastMessage.class;
         else

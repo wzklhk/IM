@@ -25,7 +25,7 @@ public class SimpleSignInServerHandler extends SimpleChannelInboundHandler<SignI
             ctx.writeAndFlush(signInResponseMessage);
             ctx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
         } else {
-            Users.getUserArrayList().add(new User(username, ctx.channel(), true));
+            Users.getUserArrayList().add(new User(username, ctx.channel()));
             signInResponseMessage = new SignInResponseMessage(true, "OK");
             ctx.writeAndFlush(signInResponseMessage);
         }
@@ -59,6 +59,7 @@ public class SimpleSignInServerHandler extends SimpleChannelInboundHandler<SignI
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        Users.getUserArrayList().remove(Users.getUser(ctx.channel()));
         Channels.getChannelArrayList().remove(ctx.channel());
 
         String str = String.format(

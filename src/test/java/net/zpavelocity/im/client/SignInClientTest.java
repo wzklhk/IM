@@ -30,8 +30,8 @@ public class SignInClientTest {
         EventLoopGroup group = new NioEventLoopGroup();
 
         try {
-            Bootstrap b = new Bootstrap()
-                    .group(group)
+            Bootstrap b = new Bootstrap();
+            b.group(group)
                     .channel(NioSocketChannel.class)
                     .remoteAddress(new InetSocketAddress(HOST, PORT))
                     .handler(new ChannelInitializer<SocketChannel>() {
