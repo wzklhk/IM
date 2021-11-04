@@ -1,0 +1,50 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /test/
+spring:
+  #  mvc:
+  #    static-path-pattern: /static/**
+  #  web:
+  #    resources:
+  #      static-locations: classpath:/static/
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/im-server
+    username: test
+    password: test
+
+  jpa:
+    # 数据库自动生成表
+    generate-ddl: true
+
+    # create: 每次运行程序后将原来的数据表删除，然后重新创建一个表
+    # create-drop: 每次将创建一个数据表，数据表使用完毕后，将数据表再次删除
+    # update: 如果设定的实体类发生改变，数据表更新
+    # none: 将功能不生效
+    # validate: 实体类和数据表进行校验，如果属性或数量不一致，则抛出异常
+    hibernate:
+      ddl-auto: update
+
+    database-platform: org.hibernate.dialect.MySQL57Dialect
+
+    database: mysql
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL57Dialect
+  output:
+    ansi:
+      enabled: always
+
+
+
+value: testtest
+person:
+  name: ${value}
+  age: 22
+address:
+  - Beijing
+  - Shanghai
+  - Guangzhou
+  - Shenzhen

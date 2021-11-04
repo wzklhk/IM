@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org/">
+
+<head>
+    <meta charset="UTF-8">
+    <title th:text="${status}"></title>
+</head>
+
+<body>
+<h1 th:text="${custom_msg}"></h1>
+<table border="1">
+    <tr>
+        <td>timestamp</td>
+        <td th:text="${timestamp}"></td>
+    </tr>
+    <tr>
+        <td>status</td>
+        <td th:text="${status}"></td>
+    </tr>
+    <tr>
+        <td>error</td>
+        <td th:text="${error}"></td>
+    </tr>
+    <tr>
+        <td>path</td>
+        <td th:text="${path}"></td>
+    </tr>
+</table>
+</body>
+
+</html>
