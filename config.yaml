@@ -17,8 +17,19 @@ relay:
 
 # Client 模式配置
 client:
-  # Relay 的 WebSocket 地址
-  connect: ws://your-vps-public-ip:8765
-  # 重连间隔（秒），指数退避
-  reconnect_min: 5
-  reconnect_max: 60
+  # Relay 的 WebSocket/WSS 地址
+  # 内网: ws://...  公网: wss://...
+  connect: wss://your-vps-public-ip:8765
+
+# TLS 加密（公网部署必填）
+tls:
+  cert: /path/to/cert.pem
+  key: /path/to/key.pem
+
+# 安全防护
+security:
+  # IP 白名单（空=放行所有）
+  allowed_ips:
+    - 你的本地公网IP
+  # 最大认证失败次数
+  max_auth_fail: 5

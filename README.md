@@ -107,9 +107,60 @@ Relay 不需要理解消息内容，只负责路由到正确的目标节点。
 
 ## 安全性
 
-- **Secret Token 认证**：每个 Peer 有一个共享密钥
-- **Auth-first**：连接建立后第一条消息必须是 auth，否则 30 秒超时断开
-- **不加密传输**（当前版本）：建议通过 SSH 隧道或 VPN 运行，或在同一内网使用
+### 传输加密 (WSS)
+
+公网部署**必须**使用 WSS 加密传输。
+
+```bash
+# 生成自签名证书（或使用 Let's Encrypt）
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem \
+  -days 365 -nodes -subj '/CN=你的VPS域名或IP'
+
+# Relay 启动时加载证书
+python horselink.py --mode relay --name cloud-horse --secret 你的密钥 \
+  --cert cert.pem --key key.pem --port 8765
+
+# Client 通过 wss:// 连接
+python horselink.py --mode client --name local-horse --secret 你的密钥 \
+  --connect wss://你的VPS:8765
+```
+
+不提供 `--cert/--key` 则使用明文 WS（仅建议局域网/开发环境）。
+
+### IP 白名单
+
+限制哪些 IP 可以连接到 Relay：
+
+```bash
+# 只允许特定 IP 连接
+python horselink.py --mode relay --name cloud-horse --secret 你的密钥 \
+  --allow-ip 你的本地公网IP1 --allow-ip 你的本地公网IP2
+```
+
+不设置则放行所有 IP。
+
+### 认证保护
+
+```bash
+# 设置最大认证失败次数（超限后该 IP 被临时封锁）
+python horselink.py --mode relay --name cloud-horse --secret 你的密钥 \
+  --max-auth-fail 5
+```
+
+默认 5 次失败后触发速率限制。
+
+### 部署安全清单
+
+| 措施 | 建议 |
+|------|------|
+| ✅ WSS 加密 | 公网部署必须启用 |
+| ✅ IP 白名单 | 限制到已知客户端 IP |
+| ✅ 强密钥 | secret 不要用默认值 |
+| ✅ 高位端口 | 用 8765+ 避免被扫 |
+| ✅ iptables 限制 | 仅开放所需端口 |
+| ⚠️ fail2ban | 建议配合使用 |
+
+## 与 GitHub 备份的配合
 
 ---
 

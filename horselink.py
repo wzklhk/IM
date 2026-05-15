@@ -6,15 +6,22 @@ AI Agent 之间的实时通信系统。
 支持 Relay/Client 两种模式，WebSocket 传输。
 
 用法:
-  # Relay 模式 (有公网 IP 的节点)
+  # Relay 模式 (有公网 IP 的节点，带 WSS 加密)
+  python horselink.py --mode relay --name cloud-horse --secret mykey \\
+    --cert cert.pem --key key.pem --port 8765
+
+  # Relay 模式 (无加密，仅内网测试)
   python horselink.py --mode relay --name cloud-horse --secret mykey --port 8765
 
   # Client 模式 (内网节点)
   python horselink.py --mode client --name local-horse --secret mykey \\
-    --connect ws://VPS_IP:8765
+    --connect wss://VPS_IP:8765
 
-  # 交互模式: 连接后可以在终端输入消息发送
-  # 输入格式: 目标Peer名称|消息内容 (例如: local-horse|你好!)
+安全建议:
+  - 公网部署必须使用 --cert/--key 启用 WSS 加密
+  - 使用 --allow-ip 限制允许连接的客户端 IP
+  - 使用 --max-auth-fail 防止暴力破解（默认5次）
+  - 配合 iptables/fail2ban 使用效果更佳
 """
 
 import asyncio
@@ -24,8 +31,10 @@ import argparse
 import logging
 import sys
 import os
+import ssl
 import signal
 from datetime import datetime, timezone
+from collections import defaultdict
 
 # ── 依赖检查 ──
 try:
@@ -101,6 +110,66 @@ def fmt(msg: dict) -> str:
 
 
 # ═══════════════════════════════════════════════
+# 安全工具
+# ═══════════════════════════════════════════════
+
+class RateLimiter:
+    """IP 级别速率限制器"""
+
+    def __init__(self, max_attempts: int = 5, window_seconds: int = 60):
+        self.max_attempts = max_attempts
+        self.window = window_seconds
+        self._attempts: dict[str, list[float]] = defaultdict(list)
+
+    def allow(self, ip: str) -> bool:
+        """检查 IP 是否允许继续尝试"""
+        now = datetime.now().timestamp()
+        # 清理过期记录
+        self._attempts[ip] = [t for t in self._attempts[ip]
+                              if now - t < self.window]
+        return len(self._attempts[ip]) < self.max_attempts
+
+    def record(self, ip: str):
+        """记录一次尝试"""
+        self._attempts[ip].append(datetime.now().timestamp())
+
+    def remaining(self, ip: str) -> int:
+        """返回剩余允许尝试次数"""
+        now = datetime.now().timestamp()
+        self._attempts[ip] = [t for t in self._attempts[ip]
+                              if now - t < self.window]
+        return max(0, self.max_attempts - len(self._attempts[ip]))
+
+
+def load_ssl_context(cert_path: str, key_path: str) -> ssl.SSLContext:
+    """加载 TLS 证书，返回 SSLContext"""
+    if not os.path.exists(cert_path):
+        raise FileNotFoundError(f"证书文件不存在: {cert_path}")
+    if not os.path.exists(key_path):
+        raise FileNotFoundError(f"密钥文件不存在: {key_path}")
+
+    ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ssl_ctx.load_cert_chain(cert_path, key_path)
+
+    # 推荐的安全配置
+    ssl_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ssl_ctx.set_ciphers(
+        "ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:!aNULL:!MD5:!DSS"
+    )
+
+    return ssl_ctx
+
+
+def resolve_client_ip(ws) -> str:
+    """从 WebSocket 连接中提取客户端 IP（去掉端口号）"""
+    try:
+        host, port = ws.remote_address[:2]
+        return host
+    except Exception:
+        return "unknown"
+
+
+# ═══════════════════════════════════════════════
 # Peer 节点
 # ═══════════════════════════════════════════════
 
@@ -110,6 +179,11 @@ class Peer:
 
     mode="relay": 运行 WebSocket 服务器，接受客户端连接，路由消息
     mode="client": 连接 Relay 服务器，收发消息
+
+    安全特性:
+    - WSS (TLS) 加密传输 (cert_path + key_path)
+    - IP 白名单 (allowed_ips)
+    - 认证失败速率限制 (max_auth_fail)
     """
 
     def __init__(
@@ -120,6 +194,10 @@ class Peer:
         host: str = "0.0.0.0",
         port: int = 8765,
         connect_uri: str | None = None,
+        cert_path: str | None = None,
+        key_path: str | None = None,
+        allowed_ips: list[str] | None = None,
+        max_auth_fail: int = 5,
         log_level: int = logging.INFO,
     ):
         self.name = name
@@ -128,11 +206,27 @@ class Peer:
         self.host = host
         self.port = port
         self.connect_uri = connect_uri
+        self.cert_path = cert_path
+        self.key_path = key_path
+        self.allowed_ips = allowed_ips or []
+        self.max_auth_fail = max_auth_fail
+
+        # 安全状态
+        self._ssl_context = None
+        if cert_path and key_path:
+            self._ssl_context = load_ssl_context(cert_path, key_path)
+            self.log_prefix = "wss"
+        else:
+            self.log_prefix = "ws"
+
+        # 速率限制器
+        self._rate_limiter = RateLimiter(max_attempts=max_auth_fail)
 
         # 运行时状态
         self.running = False
         self._relay_peers: dict[str, object] = {}    # mode=relay: name → websocket
         self._relay_ws: object | None = None         # mode=client: 连到的 relay
+        self._relay_addr: str = ""                   # relay 地址（用于 client 显示）
         self._callbacks: list = []                    # 消息回调
         self._on_peer_join = None
         self._on_peer_leave = None
@@ -212,13 +306,38 @@ class Peer:
 
     # ── Relay 模式 ──
 
+    def _check_ip_allowed(self, ip: str) -> bool:
+        """检查 IP 是否在白名单中"""
+        if not self.allowed_ips:
+            return True  # 没有白名单则放行
+        return ip in self.allowed_ips
+
     async def _run_relay(self):
-        self.log.info(f"🚀 Relay 启动 | ws://{self.host}:{self.port}")
+        scheme = self.log_prefix
+        self.log.info(f"🚀 Relay 启动 | {scheme}://{self.host}:{self.port}")
+
+        if self._ssl_context:
+            self.log.info(f"🔒 TLS 加密已启用 (cert={self.cert_path})")
+        if self.allowed_ips:
+            self.log.info(f"🛡️ IP 白名单: {', '.join(self.allowed_ips)}")
+        self.log.info(f"🔑 最大认证失败次数: {self.max_auth_fail}")
 
         async def handler(ws):
+            client_ip = resolve_client_ip(ws)
             peer_name = None
+
             try:
-                # 等待认证 (30 秒超时)
+                # ── IP 白名单检查 ──
+                if not self._check_ip_allowed(client_ip):
+                    self.log.warning(f"🚫 IP 被拒绝: {client_ip}")
+                    await ws.send(json.dumps(make_msg(
+                        MSG_ERROR, self.name, "?",
+                        {"error": "IP not allowed"}
+                    ), ensure_ascii=False))
+                    await ws.close()
+                    return
+
+                # ── 等待认证 (30 秒超时) ──
                 raw = await asyncio.wait_for(ws.recv(), timeout=30)
                 msg = json.loads(raw)
 
@@ -227,20 +346,45 @@ class Peer:
                         MSG_ERROR, self.name, "?",
                         {"error": "首条消息必须是 auth"}
                     ), ensure_ascii=False))
+                    await ws.close()
                     return
 
                 peer_name = msg.get("from")
                 secret = msg.get("payload", {}).get("secret")
 
-                if secret != self.secret:
+                # ── 速率限制检查 ──
+                if not self._rate_limiter.allow(client_ip):
+                    remaining = self._rate_limiter.remaining(client_ip)
+                    self.log.warning(
+                        f"🚫 速率限制触发: {client_ip} ({peer_name}), "
+                        f"剩余尝试: {remaining}"
+                    )
                     await ws.send(json.dumps(make_msg(
                         MSG_ERROR, self.name, peer_name or "?",
-                        {"error": "认证失败: secret 不匹配"}
+                        {"error": f"认证失败次数过多，请等待后重试"}
                     ), ensure_ascii=False))
+                    await ws.close()
                     return
 
+                # ── Secret 校验 ──
+                if secret != self.secret:
+                    self._rate_limiter.record(client_ip)
+                    remaining = self._rate_limiter.remaining(client_ip)
+                    self.log.warning(
+                        f"❌ 认证失败: {client_ip} ({peer_name}), "
+                        f"剩余尝试: {remaining}"
+                    )
+                    await ws.send(json.dumps(make_msg(
+                        MSG_ERROR, self.name, peer_name or "?",
+                        {"error": "认证失败: secret 不匹配",
+                         "remaining_attempts": remaining}
+                    ), ensure_ascii=False))
+                    await ws.close()
+                    return
+
+                # ── 认证成功 ──
                 self._relay_peers[peer_name] = ws
-                self.log.info(f"✅ Peer 上线: {peer_name}")
+                self.log.info(f"✅ Peer 上线: {peer_name} ({client_ip})")
 
                 # 发确认
                 await ws.send(json.dumps(make_msg(
@@ -265,13 +409,13 @@ class Peer:
                     {"peers": [n for n in self._relay_peers if n != peer_name]}
                 ), ensure_ascii=False))
 
-                # 消息循环
+                # ── 消息循环 ──
                 async for raw in ws:
                     try:
                         msg_in = json.loads(raw)
                         err = validate_msg(msg_in)
                         if err:
-                            self.log.warning(f"消息校验失败: {err}")
+                            self.log.warning(f"消息校验失败 ({peer_name}): {err}")
                             await ws.send(json.dumps(make_msg(
                                 MSG_ERROR, self.name, peer_name,
                                 {"error": err}
@@ -279,22 +423,22 @@ class Peer:
                             continue
                         await self._route(msg_in, ws)
                     except json.JSONDecodeError:
-                        self.log.warning(f"收到非法 JSON: {raw[:100]}")
+                        self.log.warning(f"非法 JSON ({peer_name}): {raw[:100]}")
                         await ws.send(json.dumps(make_msg(
                             MSG_ERROR, self.name, peer_name,
                             {"error": "非法 JSON"}
                         ), ensure_ascii=False))
 
             except asyncio.TimeoutError:
-                self.log.warning(f"⏱ 认证超时: {ws.remote_address}")
+                self.log.warning(f"⏱ 认证超时: {client_ip}")
             except websockets.exceptions.ConnectionClosed:
                 pass
             except Exception as e:
-                self.log.error(f"Handler 异常: {e}")
+                self.log.error(f"Handler 异常 ({client_ip}): {e}")
             finally:
                 if peer_name and peer_name in self._relay_peers:
                     del self._relay_peers[peer_name]
-                    self.log.info(f"❌ Peer 下线: {peer_name}")
+                    self.log.info(f"❌ Peer 下线: {peer_name} ({client_ip})")
                     leave_msg = make_msg(
                         MSG_STATUS, self.name, "*",
                         {"event": "peer_left", "peer": peer_name}
@@ -305,6 +449,7 @@ class Peer:
 
         self._server = await websockets.serve(
             handler, self.host, self.port,
+            ssl=self._ssl_context,
             ping_interval=30, ping_timeout=10,
         )
         await self._server.wait_closed()
@@ -318,12 +463,22 @@ class Peer:
 
         self.log.info(f"🚀 Client 启动 | 连接 → {self.connect_uri}")
 
+        # 自动检测是否需要 SSL（wss:// 前缀）
+        client_ssl = None
+        if self.connect_uri.startswith("wss://"):
+            # 连接 WSS 时，如果服务端用自签名证书，需要跳过验证
+            client_ssl = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            client_ssl.check_hostname = False
+            client_ssl.verify_mode = ssl.CERT_NONE
+            self.log.info("🔒 WSS 模式 (自签名证书，跳过证书验证)")
+
         retry_delay = 5
 
         while self.running:
             try:
                 async with websockets.connect(
                     self.connect_uri,
+                    ssl=client_ssl,
                     ping_interval=30,
                     ping_timeout=10,
                 ) as ws:
@@ -435,9 +590,15 @@ def start_interactive(peer: Peer):
         print("=" * 50)
         print(f"🐎 HorseLink 交互模式")
         print(f"   你: {peer.name} ({peer.mode})")
+        if peer.mode == "relay":
+            scheme = "wss" if peer._ssl_context else "ws"
+            print(f"   监听: {scheme}://{peer.host}:{peer.port}")
+            if peer.allowed_ips:
+                print(f"   IP白名单: {', '.join(peer.allowed_ips)}")
         print(f"   输入: '目标名称|消息内容' 发送")
         print(f"   输入: 'help' 查看帮助")
         print(f"   输入: 'peers' 查看在线列表")
+        print(f"   输入: 'ip' 查看已连接客户端的 IP")
         print(f"   输入: 'quit' 退出")
         print("=" * 50)
         print()
@@ -448,7 +609,7 @@ def start_interactive(peer: Peer):
                 if not line:
                     continue
 
-                if line.lower() == "quit" or line.lower() == "exit":
+                if line.lower() in ("quit", "exit"):
                     print("👋 再见!")
                     peer.stop()
                     break
@@ -457,15 +618,25 @@ def start_interactive(peer: Peer):
                     print("格式: 目标|消息")
                     print("例如: local-horse|你好!")
                     print("     all|大家注意")
-                    print("命令: peers, help, quit")
+                    print("命令: peers, ip, help, quit")
                     continue
 
                 if line.lower() == "peers":
                     if peer.mode == "relay":
                         peers = list(peer._relay_peers.keys())
-                        print(f"在线: {peers}")
+                        print(f"在线: {peers if peers else '(无)'}")
                     else:
                         print("在线列表由 Relay 推送")
+                    continue
+
+                if line.lower() == "ip":
+                    if peer.mode == "relay":
+                        print("已连接客户端:")
+                        for name, ws in peer._relay_peers.items():
+                            ip = resolve_client_ip(ws)
+                            print(f"  {name} → {ip}")
+                    else:
+                        print(f"Relay: {peer.connect_uri or '?'}")
                     continue
 
                 if "|" in line:
@@ -557,13 +728,19 @@ def main():
         description="🐎 HorseLink — Agent P2P IM System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  # 云马 (VPS, Relay 模式)
-  python horselink.py --mode relay --name cloud-horse --secret s3cret --port 8765
+安全部署示例:
+  # 1. 生成自签名证书
+  openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem \\
+    -days 365 -nodes -subj '/CN=your-vps-domain-or-ip'
 
-  # 本地马 (Client 模式)
+  # 2. 启动 Relay (加密 + IP白名单)
+  python horselink.py --mode relay --name cloud-horse --secret s3cret \\
+    --cert cert.pem --key key.pem --port 8765 \\
+    --allow-ip 你本地的公网IP
+
+  # 3. Client 连接
   python horselink.py --mode client --name local-horse --secret s3cret \\
-    --connect ws://1.2.3.4:8765
+    --connect wss://VPS_IP:8765
         """
     )
     parser.add_argument("--mode", choices=["relay", "client"], default="client",
@@ -578,6 +755,14 @@ def main():
                         help="Relay 监听端口 (默认: 8765)")
     parser.add_argument("--connect",
                         help="Client 连接 URI (如 ws://1.2.3.4:8765)")
+    parser.add_argument("--cert",
+                        help="TLS 证书路径 (PEM 格式，开启 WSS)")
+    parser.add_argument("--key",
+                        help="TLS 密钥路径 (PEM 格式)")
+    parser.add_argument("--allow-ip", action="append", dest="allowed_ips",
+                        help="允许连接的客户端 IP (可重复使用)")
+    parser.add_argument("--max-auth-fail", type=int, default=5,
+                        help="最大认证失败次数 (默认: 5)")
     parser.add_argument("--quiet", action="store_true",
                         help="静默模式，只打印消息不打印日志")
 
@@ -592,6 +777,19 @@ def main():
         print("❌ Client 模式需要 --connect 参数")
         sys.exit(1)
 
+    # TLS 参数校验
+    if (args.cert and not args.key) or (args.key and not args.cert):
+        print("❌ --cert 和 --key 必须同时提供")
+        sys.exit(1)
+
+    if args.mode == "relay" and args.cert:
+        print(f"📜 证书: {args.cert}")
+        print(f"🔑 密钥: {args.key}")
+
+    if args.mode == "relay" and not args.cert:
+        print("⚠️  未启用 TLS 加密！仅建议在局域网/开发环境使用")
+        print("   公网部署请使用 --cert 和 --key 启用 WSS")
+
     # 日志
     log_level = logging.WARNING if args.quiet else logging.INFO
 
@@ -600,9 +798,13 @@ def main():
         name=args.name,
         secret=args.secret,
         mode=args.mode,
-        host=args.host,
-        port=args.port,
+        host=args.host if args.mode == "relay" else None,
+        port=args.port if args.mode == "relay" else 0,
         connect_uri=args.connect,
+        cert_path=args.cert,
+        key_path=args.key,
+        allowed_ips=args.allowed_ips,
+        max_auth_fail=args.max_auth_fail,
         log_level=log_level,
     )
 
