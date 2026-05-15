@@ -1,0 +1,24 @@
+# HorseLink 配置模板
+# 复制为 config.yaml 并根据实际情况修改
+
+# Peer 名称（唯一标识）
+name: cloud-horse
+
+# Secret（所有连接的 Peer 必须使用相同密钥）
+secret: change-this-to-a-real-secret
+
+# 模式: relay 或 client
+mode: relay
+
+# Relay 模式配置
+relay:
+  host: 0.0.0.0
+  port: 8765
+
+# Client 模式配置
+client:
+  # Relay 的 WebSocket 地址
+  connect: ws://your-vps-public-ip:8765
+  # 重连间隔（秒），指数退避
+  reconnect_min: 5
+  reconnect_max: 60
